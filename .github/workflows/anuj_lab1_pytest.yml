@@ -1,0 +1,52 @@
+name: Anuj Lab1 - Testing with Pytest
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Labs/Github_Labs/Lab1_Anuj/**'
+      - '.github/workflows/anuj_lab1_pytest.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: Labs/Github_Labs/Lab1_Anuj
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests and generate XML report
+        run: pytest test/ -v --junitxml=pytest-report.xml
+        continue-on-error: false
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-py${{ matrix.python-version }}
+          path: Labs/Github_Labs/Lab1_Anuj/pytest-report.xml
+
+      - name: Notify on success
+        if: success()
+        run: echo "Tests passed successfully on Python ${{ matrix.python-version }}"
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "Tests failed on Python ${{ matrix.python-version }}"
