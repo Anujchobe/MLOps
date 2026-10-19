@@ -1,0 +1,87 @@
+name: Anuj Lab2 - Train, Calibrate, Gate & Version
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Labs/Github_Labs/Lab2_Anuj/src/**"
+      - "Labs/Github_Labs/Lab2_Anuj/tests/**"
+      - "Labs/Github_Labs/Lab2_Anuj/requirements.txt"
+      - ".github/workflows/anuj_lab2_train_calibrate.yml"
+  workflow_dispatch:
+    inputs:
+      calib_method:
+        description: "Calibration method"
+        type: choice
+        options: [sigmoid, isotonic]
+        default: sigmoid
+
+permissions:
+  contents: write   # needed to commit the new model version back
+
+concurrency:        # never let two runs race on the commit-back
+  group: anuj-lab2
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: Labs/Github_Labs/Lab2_Anuj
+
+jobs:
+  train-calibrate-version:
+    runs-on: ubuntu-latest
+    env:
+      CALIB_METHOD: ${{ inputs.calib_method || 'sigmoid' }}
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Labs/Github_Labs/Lab2_Anuj/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Unit tests
+        run: pytest tests -q
+
+      - name: Train model + baseline
+        run: python -m src.train
+
+      - name: Calibrate on held-out calibration split
+        run: python -m src.calibrate
+
+      - name: Evaluate & quality gate
+        run: python -m src.evaluate
+
+      - name: Register & version model
+        run: python -m src.register
+
+      - name: Build dashboard
+        run: python -m src.dashboard
+
+      - name: Upload dashboard & metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab2-dashboard-${{ github.run_number }}
+          path: |
+            Labs/Github_Labs/Lab2_Anuj/reports/
+            Labs/Github_Labs/Lab2_Anuj/metrics/
+          if-no-files-found: warn
+
+      - name: Commit versioned model, metrics & dashboard
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A models metrics reports
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"; exit 0
+          fi
+          VERSION=$(python -c "import json;print(json.load(open('models/registry.json'))['latest'])")
+          git commit -m "Lab2: register model ${VERSION} [skip ci]"
+          git pull --rebase origin main
+          git push origin HEAD:main
